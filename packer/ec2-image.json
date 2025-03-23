@@ -1,0 +1,29 @@
+{
+  "variables": {
+    "aws_region": "us-east-1"
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "{{user `aws_region`}}",
+      "source_ami": "ami-08b5b3a93ed654d19",
+      "instance_type": "t2.micro",
+      "ssh_username": "ec2-user",
+      "ssh_keypair_name": "2/26/2025",
+      "ssh_private_key_file": "2_26_2025.pem",
+      "associate_public_ip_address": true,
+      "ami_name": "my-custom-ami-{{timestamp}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo yum update -y",
+        "sudo yum install -y docker",
+        "sudo systemctl enable docker",
+        "sudo systemctl start docker"
+      ]
+    }
+  ]
+}
