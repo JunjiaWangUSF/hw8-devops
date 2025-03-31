@@ -1,0 +1,8 @@
+---
+ansible_user: ubuntu
+ansible_python_interpreter: /usr/bin/python3
+os_pkg_manager: apt
+docker_pkgs:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
