@@ -1,0 +1,154 @@
+---
+- name: Manage EC2 instances
+  hosts: all
+  become: yes
+  gather_facts: true
+
+  tasks:
+    # Task 1: Update package caches based on the package manager
+    - name: Update APT cache (Ubuntu)
+      apt:
+        update_cache: yes
+      when: ansible_distribution == 'Ubuntu'
+      register: apt_cache
+      changed_when: false
+
+    - name: Update YUM cache (Amazon Linux/CentOS 7)
+      yum:
+        update_cache: yes
+      when: ansible_os_family == 'RedHat' and ansible_distribution_major_version|int < 8
+      register: yum_cache
+      changed_when: false
+
+    - name: Update DNF cache (Fedora/CentOS 8+)
+      dnf:
+        update_cache: yes
+      when: ansible_os_family == 'RedHat' and ansible_distribution_major_version|int >= 8
+      register: dnf_cache
+      changed_when: false
+
+    # Task 2: Upgrade all packages based on the distribution
+    - name: Upgrade all packages (Ubuntu)
+      apt:
+        upgrade: dist
+        autoremove: yes
+      when: ansible_distribution == 'Ubuntu'
+      register: pkg_upgrade
+
+    - name: Upgrade all packages (YUM-based systems)
+      yum:
+        name: "*"
+        state: latest
+      when: ansible_os_family == 'RedHat' and ansible_distribution_major_version|int < 8
+      register: pkg_upgrade
+
+    - name: Upgrade all packages (DNF-based systems)
+      dnf:
+        name: "*"
+        state: latest
+      when: ansible_os_family == 'RedHat' and ansible_distribution_major_version|int >= 8
+      register: pkg_upgrade
+
+    # Task 3: Docker verification and update checks
+    - name: Check if Docker is installed
+      command: which docker
+      register: docker_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Get Docker version
+      command: docker --version
+      register: docker_version
+      changed_when: false
+      when: docker_check.rc == 0
+
+    - name: Set Docker latest version manually
+      set_fact:
+        latest_docker_version: "Docker version 28.0.4"
+
+    - name: Check if Docker needs updating
+      set_fact:
+        docker_needs_update: "{{ docker_version.stdout.split(',')[0] != latest_docker_version }}"
+      when: docker_check.rc == 0
+
+    - name: Update Docker section with update info
+      set_fact:
+        docker_section: |
+          Docker Status:
+            - Installed Version: {{ docker_version.stdout | default('Not installed') }}
+            - Latest Version: {{ latest_docker_version }}
+            - Update Available: {{ docker_needs_update | ternary('Yes', 'No') }}
+      when: docker_check.rc == 0
+
+    - name: Check Docker service status
+      systemd:
+        name: docker
+        state: started
+      register: docker_status
+      ignore_errors: true
+      when: docker_check.rc == 0
+
+    # Task 4: System health checks
+    - name: Check disk usage
+      command: df -h --output=source,size,used,avail,pcent,target
+      register: disk_usage
+      changed_when: false
+
+    - name: Check memory usage
+      command: free -h
+      register: memory_usage
+      changed_when: false
+
+    # Task 5: Generate system report
+    - name: Generate system report
+      block:
+        - name: Create report header
+          set_fact:
+            report_header: |
+              ============================================
+              System Health Report - {{ ansible_hostname }}
+              ============================================
+              OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+              Uptime: {{ (ansible_uptime_seconds / 3600) | round(2) }} hours
+
+        - name: Create Docker section
+          set_fact:
+            docker_section: |
+              Docker Status:
+                - Installed Version: {{ docker_version.stdout | default('Not installed') }}
+                - Latest Version: {{ latest_docker_version }}
+                - Update Available: {{ docker_needs_update | ternary('Yes', 'No') }}
+
+          when: docker_check.rc == 0
+
+        - name: Create package section
+          set_fact:
+            package_section: |
+              Package Updates:
+                - {{ pkg_upgrade.changed | ternary('Updated', 'No updates available') }}
+
+        - name: Create disk section
+          set_fact:
+            disk_section: |
+              Disk Usage:
+              {{ disk_usage.stdout | indent(width=16) }}
+
+        - name: Create memory section
+          set_fact:
+            memory_section: |
+              Memory Usage:
+              {{ memory_usage.stdout | indent(width=16) }}
+
+        - name: Combine all sections
+          set_fact:
+            full_report: |
+              {{ report_header }}
+              {% if docker_check.rc == 0 %}{{ docker_section }}{% endif %}
+              {{ package_section }}
+              {{ disk_section }}
+              {{ memory_section }}
+              ============================================
+
+        - name: Display clean report
+          debug:
+            msg: "{{ full_report.split('\n') }}"

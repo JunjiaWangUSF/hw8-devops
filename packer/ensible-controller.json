@@ -1,0 +1,34 @@
+{
+  "variables": {
+    "aws_region": "us-east-1"
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "{{user `aws_region`}}",
+      "source_ami": "ami-084568db4383264d4",
+      "instance_type": "t2.micro",
+      "ssh_username": "ubuntu",
+      "ssh_keypair_name": "2/26/2025",
+      "ssh_private_key_file": "2_26_2025.pem",
+      "associate_public_ip_address": true,
+      "ami_name": "ensible-controller-{{timestamp}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt update && sudo apt upgrade -y",
+        "sudo apt install software-properties-common -y",
+        "sudo add-apt-repository ppa:ansible/ansible -y",
+        "sudo apt update",
+        "sudo apt install ansible -y",
+        "sudo apt install -y python3-pip",
+        "sudo apt install python3-boto3",
+        "sudo pip install awscli --break-system-packages",
+        "ansible-galaxy collection install amazon.aws"
+      ]
+    }
+  ]
+}

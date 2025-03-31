@@ -12,7 +12,7 @@
       "ssh_keypair_name": "2/26/2025",
       "ssh_private_key_file": "2_26_2025.pem",
       "associate_public_ip_address": true,
-      "ami_name": "my-custom-ami-{{timestamp}}"
+      "ami_name": "amazon-linux-{{timestamp}}"
     }
   ],
   "provisioners": [
@@ -22,7 +22,9 @@
         "sudo yum update -y",
         "sudo yum install -y docker",
         "sudo systemctl enable docker",
-        "sudo systemctl start docker"
+        "sudo systemctl start docker",
+        "sudo passwd ${USER}",
+        "sudo -u ${USER} -i"
       ]
     }
   ]

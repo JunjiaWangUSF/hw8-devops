@@ -1,23 +1,17 @@
-# Packer + Terraform AWS Infrastructure
+# Multi-OS EC2 Configuration with Ansible
 
-This project provisions a complete AWS infrastructure using **Packer** and **Terraform**. It demonstrates how to:
+This project involves the use of Terraform, Packer, and Ansible to provision and manage EC2 instances on AWS. The setup provisions six EC2 instances, three running Ubuntu and three running Amazon Linux, alongside a separate EC2 instance to host the Ansible Controller.
 
-- Build a **custom Amazon Machine Image (AMI)** using Packer
-- Provision:
-  - A **bastion host** in a public subnet (accessible via SSH from your IP only)
-  - **6 EC2 instances** in private subnets using the custom AMI
-- Control access using **security groups**
-- Distribute instances across **multiple Availability Zones (AZs)**
-
----
+Ansible is used in this project to manage the state of the EC2 instances provisioned by Terraform. The Ansible playbook ensures the EC2 instances are configured according to best practices for security and performance, and it automates the routine tasks of updating and upgrading system packages, verifying Docker installation, and monitoring disk usage.
 
 ## Prerequisites
 
 - AWS CLI configured (`aws configure`)
-- Terraform >= 1.0
-- Packer >= 1.7
+- Terraform
+- Packer
+- Ansible
 - An existing key pair in AWS or a generated key (`.pem`) file
-- Your public IP address for SSH (can be found at https://ipinfo.io/ip)
+- Your public IP address for SSH
 
 ---
 
@@ -34,12 +28,21 @@ Navigate to the `packer/` directory and build the image:
 
 ```bash
 cd packer
-packer build ec2-image.json
+packer build amazon-linux2.json
 ```
 
 This creates a custom AMI with Docker installed.
 
-![alt text](d1c704d9d371a7370bc6268b0acc84b.png)
+![alt text](image-7.png)
+
+Repeate this setp for
+
+```
+ensible-controller.json
+
+ubuntu.json
+
+```
 
 ## Step 2: Deploy Infrastructure with Terraform
 
@@ -59,19 +62,25 @@ terraform init
 
 - Your public IP (e.g. "203.0.113.42/32")
 
-- Your custom AMI ID (from the Packer output)
-
 - Your AWS region (e.g. "us-east-1")
 
 - Your public key in RSA format
 
-- Generate public key using command and copy content
+- Generate public key using command and copy content (only has private key)
 
 ```
 ssh-keygen -y -f 2_26_2025.pem > id_rsa.pub
 ```
 
-4. Plan the configuration:
+4. update private-subnet-ec2.tf and ansible-controller.tf
+
+Replace ami created in step1 in resouce
+
+- Ubuntu
+- Amazon-Linux
+- ansible-controller
+
+5. Plan the configuration:
    It will list out all resources be created
 
 ```
@@ -79,56 +88,105 @@ terraform plan
 
 ```
 
-![alt text](061f706a5eead98de12125d79fa5f3b.png)
-
-5. Apply the configuration:
+6. Apply the configuration:
 
 ```
 terraform apply
 ```
 
-Desidered Outcome:
-![alt text](48da17fc19ce38abc1e4614fad54bbb.png)
-
 ## Step 3: Verify Resources Created
 
-A bastion host in a public subnet (with public IP)
+3 ubuntu 3 amazon-linux 1 bastion host 1 controller
 
-6 EC2 instances distributed across 3 private subnets (2 per subnet)
-
-All instances should be running
-
-The private EC2 instances should be accessible via the bastion only
+- make sure each EC2 instances has OS tags
+  ![alt text](image-2.png)
 
 ![alt text](image.png)
 
-## Step 4: Visit EC2 Instance In Private Subnet
-
-1. Login to bastion host
+## Step 4: Transfer prviate key
 
 ```
-ssh -i yourprivatekey.pem ec2-user@publicIP.compute-1.amazonaws.com
+scp -i 2_26_2025.pem 2_26_2025.pem ubuntu@ansible-controller-public-ip.compute-1.amazonaws.com:~
 ```
 
-2. Transfer private key to bastion host
+We could use AWS security manager but due to leaner's lab limitation we cannot use the advance way.
+
+## Step 5: Config AWS CLI
 
 ```
-scp -i 2_26_2025.pem 2_26_2025.pem ec2-user@ec2-3-95-152-194.compute-1.amazonaws.com:~/
-
+mkdir -p ~/.aws
+cd ~/.aws
+vim credentials
 ```
 
-![alt text](9dbc7d3d5bb1ff467d008ed89aeb4f0.png)
+Copy access-key, access-token and session-token in credentials file
 
-3. Find EC2 instance private ip
-
-![alt text](c5be0e426b652fb7d4a811d17c5d406.png)
-
-4. Login EC2 instance in private subnet
+## Step 6: Copy private key to .ssh folder
 
 ```
-ssh -i 2_26_2025.pem 10.0.1.68
+mv privatekey.pem  ~/.ssh
+chmod 400  privatekey.pem
 
 ```
 
-5. Verify Docker installed
-   ![alt text](ade21726159254e146afcba08e4a382.png)
+![alt text](image-1.png)
+
+## Step 7: Update static.ini
+
+Replace ips with your private ec2 ips
+
+```
+[ubuntu]
+10.0.2.172
+10.0.3.151
+10.0.1.47
+
+[amazon_linux]
+10.0.3.212
+10.0.1.66
+10.0.2.28
+
+[all:vars]
+ansible_ssh_private_key_file=~/.ssh/2_26_2025.pem
+ansible_ssh_common_args="-o StrictHostKeyChecking=no"
+```
+
+## Step 8: Create Ansible Inventory and playbook
+
+Copy all content under an Ansible folder and create a specific file structure
+
+```
+root/
+   inventory/
+   ├── static.ini
+   └── group_vars/
+      ├── ubuntu.yml
+      └── amazon_linux.yml
+   playbook.yml
+```
+
+When run an Ansible playbook against this inventory, Ansible will:
+
+Use the IP addresses defined under each group to connect to the hosts.
+
+Apply the global variables to all hosts for SSH connections.
+
+Load group-specific variables from group_vars based on the group membership of each host. This means hosts under the [ubuntu] group will use apt to manage packages and have a specific set of Docker packages, while [amazon_linux] hosts will use yum.
+
+## Step 9: Check EC2 configuration
+
+```
+ansible-playbook -i inventory/static.ini playbook.yml
+```
+
+Ubuntu Report:
+
+![alt text](image-4.png)
+
+Amazon-linx Report:
+
+![alt text](image-5.png)
+
+Play Recap:
+
+![alt text](image-6.png)

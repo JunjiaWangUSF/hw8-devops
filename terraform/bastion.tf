@@ -35,6 +35,12 @@ resource "aws_instance" "bastion" {
     key_name = aws_key_pair.bastion-key.key_name
     security_groups = [aws_security_group.bastion_sg.id]
     subnet_id = module.vpc.public_subnets[0]
-    tags = var.resource_tags
     associate_public_ip_address = true
+
+    tags = merge(
+    var.resource_tags,
+    {
+      Name = "my-bastion"
+    }
+  )
 }
